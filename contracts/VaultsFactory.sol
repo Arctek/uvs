@@ -7,10 +7,15 @@ import "./IVaultsFactory.sol";
 import "./IVault.sol";
 
 contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
+    address public immutable weth;
+
     address public vaultsImplementation;
     uint256 public unwrapDelay;
 
-    mapping(address => bool) public pausedVaults;
+    address public feeReceiver;
+    uint256 public feeBasisPoints;
+
+    mapping(IVault => bool) public pausedVaults;
     bool public allVaultsPaused = false;
 
     // Role identifiers for pausing, deploying, and admin actions
@@ -18,17 +23,30 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
     bytes32 public constant UNPAUSE_ROLE = keccak256("UNPAUSE_ROLE");
     bytes32 public constant DEPLOY_ROLE = keccak256("DEPLOY_ROLE");
 
-    event VaultDeployed(address vaultAddress);
-    event VaultPaused(address vaultAddress);
-    event VaultUnpaused(address vaultAddress);
+    event VaultDeployed(IVault vaultAddress);
+    event VaultPaused(IVault vaultAddress);
+    event VaultUnpaused(IVault vaultAddress);
     event AllVaultsPaused();
     event AllVaultsUnpaused();
 
+    modifier isVault(IVault vault_) {
+        try vault_.isVault() returns (bytes32 result) {
+            require(vault_.isVault() == keccak256("Vaults.Vault") ^ bytes32(uint256(uint160(address(this)))), "VAULTS: NOT_VAULT");
+        } catch {
+            revert("VAULTS: NOT_VAULT");
+        }
+        _;
+    }
+
     constructor(
+        address weth_,
         address vaultsImplementationAddress_,
         uint256 unwrapDelay_,
-        address rolesAddr_
+        address rolesAddr_,
+        address initialFeeReceiver_,
+        uint256 initialFeeBasisPoints_
     ) {
+        weth = weth_;
         vaultsImplementation = vaultsImplementationAddress_;
         unwrapDelay = unwrapDelay_;
 
@@ -36,25 +54,28 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         _setupRole(PAUSE_ROLE, rolesAddr_);
         _setupRole(UNPAUSE_ROLE, rolesAddr_);
         _setupRole(DEPLOY_ROLE, rolesAddr_);
+
+        _setFeeReceiver(initialFeeReceiver_);
+        _setFeeBasisPoints(initialFeeBasisPoints_);
     }
 
-    function deployVault(address underlyingToken_) external onlyRole(DEPLOY_ROLE) returns (address) {
+    function deployVault(address underlyingToken_, string memory name_, string memory symbol_) external onlyRole(DEPLOY_ROLE) returns (IVault result) {
         TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
             vaultsImplementation,
-            msg.sender,
+            getRoleMember(DEFAULT_ADMIN_ROLE, 0),
             ""
         );
-        IVault(address(proxy)).initialize(underlyingToken_, this);
-        emit VaultDeployed(address(proxy));
-        return address(proxy);
+        result = IVault(address(proxy));
+        result.initialize(underlyingToken_, this, underlyingToken_ == weth, name_, symbol_);
+        emit VaultDeployed(result);
     }
 
-    function pauseVault(address vaultAddress_) external onlyRole(PAUSE_ROLE) {
-        pausedVaults[vaultAddress_] = true;
-        emit VaultPaused(vaultAddress_);
+    function pauseVault(IVault vault_) external onlyRole(PAUSE_ROLE) isVault(vault_) {
+        pausedVaults[vault_] = true;
+        emit VaultPaused(vault_);
     }
 
-    function unpauseVault(address vaultAddress_) external onlyRole(UNPAUSE_ROLE) {
+    function unpauseVault(IVault vaultAddress_) external onlyRole(UNPAUSE_ROLE) isVault(vaultAddress_) {
         delete pausedVaults[vaultAddress_];
         emit VaultUnpaused(vaultAddress_);
     }
@@ -69,7 +90,7 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         emit AllVaultsUnpaused();
     }
 
-    function isPaused(address vaultAddress_) public view returns (bool) {
+    function isPaused(IVault vaultAddress_) public view returns (bool) {
         return allVaultsPaused || pausedVaults[vaultAddress_];
     }
 
@@ -78,11 +99,28 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
     }
 
     function setVaultsImplementation(address vaultsImplementation_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(vaultsImplementation_ != address(0), "Zero address");
+        require(vaultsImplementation_ != address(0), "VAULTS: ZERO_ADDRESS");
         vaultsImplementation = vaultsImplementation_;
     }
 
-    function emergencyWithdrawFromVault(address vaultAddress, address to_, uint256 amount_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        IVault(vaultAddress).emergencyWithdraw(to_, amount_);
+    function emergencyWithdrawFromVault(IVault vaultAddress_, address to_, uint256 amount_) external onlyRole(DEFAULT_ADMIN_ROLE) isVault(vaultAddress_) {
+        vaultAddress_.emergencyWithdraw(to_, amount_);
+    }
+
+    function _setFeeReceiver(address feeReceiver_) internal {
+        feeReceiver = feeReceiver_;
+    }
+
+    function _setFeeBasisPoints(uint256 feeBasisPoints_) internal {
+        require(feeBasisPoints_ <= 10000, "VAULTS: EXCESSIVE_FEE_PERCENT");  // Max of 10000 basis points
+        feeBasisPoints = feeBasisPoints_;
+    }
+
+    function setFeeReceiver(address feeReceiver_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setFeeReceiver(feeReceiver_);
+    }
+
+    function setFeeBasisPoints(uint256 feeBasisPoints_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setFeeBasisPoints(feeBasisPoints_);
     }
 }
