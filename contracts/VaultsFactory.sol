@@ -2,14 +2,12 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
-import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "./IVaultsFactory.sol";
-import "./IVault.sol";
+import "./Vault.sol";
 
 contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
     address public immutable weth;
 
-    address public vaultsImplementation;
     uint256 public unwrapDelay;
 
     address public feeReceiver;
@@ -31,7 +29,7 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
 
     modifier isVault(IVault vault_) {
         try vault_.isVault() returns (bytes32 result) {
-            require(vault_.isVault() == keccak256("Vaults.Vault") ^ bytes32(uint256(uint160(address(this)))), "VAULTS: NOT_VAULT");
+            require(result == keccak256("Vaults.Vault") ^ bytes32(uint256(uint160(address(this)))), "VAULTS: NOT_VAULT");
         } catch {
             revert("VAULTS: NOT_VAULT");
         }
@@ -40,14 +38,12 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
 
     constructor(
         address weth_,
-        address vaultsImplementationAddress_,
         uint256 unwrapDelay_,
         address rolesAddr_,
         address initialFeeReceiver_,
         uint256 initialFeeBasisPoints_
     ) {
         weth = weth_;
-        vaultsImplementation = vaultsImplementationAddress_;
         unwrapDelay = unwrapDelay_;
 
         _setupRole(DEFAULT_ADMIN_ROLE, rolesAddr_);
@@ -59,14 +55,15 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         _setFeeBasisPoints(initialFeeBasisPoints_);
     }
 
-    function deployVault(address underlyingToken_, string memory name_, string memory symbol_) external onlyRole(DEPLOY_ROLE) returns (IVault result) {
-        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
-            vaultsImplementation,
-            getRoleMember(DEFAULT_ADMIN_ROLE, 0),
-            ""
+    function deployVault(IERC20Metadata underlyingToken_, string memory name_, string memory symbol_) external onlyRole(DEPLOY_ROLE) returns (IVault result) {
+        result = new Vault(
+            underlyingToken_,
+            this,
+            address(underlyingToken_) == weth,
+            bytes(name_).length != 0 ? name_ : string(abi.encodePacked("Vaulted ", underlyingToken_.symbol())),
+            bytes(symbol_).length != 0 ? symbol_ : string(abi.encodePacked("v", underlyingToken_.symbol()))
         );
-        result = IVault(address(proxy));
-        result.initialize(underlyingToken_, this, underlyingToken_ == weth, name_, symbol_);
+
         emit VaultDeployed(result);
     }
 
@@ -98,12 +95,7 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         unwrapDelay = unwrapDelay_;
     }
 
-    function setVaultsImplementation(address vaultsImplementation_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(vaultsImplementation_ != address(0), "VAULTS: ZERO_ADDRESS");
-        vaultsImplementation = vaultsImplementation_;
-    }
-
-    function emergencyWithdrawFromVault(IVault vaultAddress_, address to_, uint256 amount_) external onlyRole(DEFAULT_ADMIN_ROLE) isVault(vaultAddress_) {
+    function emergencyWithdrawFromVault(IVault vaultAddress_, address to_, uint256 amount_) external onlyRole(DEFAULT_ADMIN_ROLE) {
         vaultAddress_.emergencyWithdraw(to_, amount_);
     }
 

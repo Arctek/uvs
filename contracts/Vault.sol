@@ -2,20 +2,20 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./IVaultsFactory.sol";
 import "./IVault.sol";
 import "./IWETH.sol";
 
 
-contract VaultImplementation is IVault, Initializable, ERC20Upgradeable, ReentrancyGuardUpgradeable {
-    using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
+contract Vault is IVault, ERC20Permit, ReentrancyGuard {
+    using SafeERC20 for IERC20Metadata;
 
-    IERC20MetadataUpgradeable public underlyingToken;
-    IVaultsFactory public factory;
-    bool public isEth;
+    IERC20Metadata public immutable underlyingToken;
+    IVaultsFactory public immutable factory;
+    bool public immutable isEth;
 
     bool public emergency = false;
 
@@ -37,15 +37,13 @@ contract VaultImplementation is IVault, Initializable, ERC20Upgradeable, Reentra
         _;
     }
 
-    function initialize(address underlyingTokenAddress_, IVaultsFactory factory_, bool isEth_, string memory name_, string memory symbol_) public initializer {
-        underlyingToken = IERC20MetadataUpgradeable(underlyingTokenAddress_);
+    constructor(IERC20Metadata underlyingToken_, IVaultsFactory factory_, bool isEth_, string memory name_, string memory symbol_)
+        ERC20Permit(name_)
+        ERC20(name_, symbol_)
+    {
+        underlyingToken = underlyingToken_;
         factory = factory_;
         isEth = isEth_;
-        __ERC20_init(
-            bytes(name_).length != 0 ? name_ : string(abi.encodePacked("Vaulted ", underlyingToken.symbol())),
-            bytes(symbol_).length != 0 ? symbol_ : string(abi.encodePacked("v", underlyingToken.symbol()))
-        );
-        __ReentrancyGuard_init();
     }
 
     // only accept ETH via fallback from the WETH contract

@@ -8,28 +8,17 @@ async function main() {
     const FEE_RECEIVER = '0x0000000000000000000000000000000000000000';
     const FEE = 0;
 
-    const VaultFactory = await ethers.getContractFactory("VaultImplementation");
-    const vault = await VaultFactory.deploy();
-    await vault.deployed();
-    console.log("VaultImplementation: ", vault.address);
-
     const VaultsFactoryFactory = await ethers.getContractFactory("VaultsFactory");
-    const factory = await VaultsFactoryFactory.deploy(WETH, vault.address, DELAY, ADMIN, FEE_RECEIVER, FEE);
+    const factory = await VaultsFactoryFactory.deploy(WETH, DELAY, ADMIN, FEE_RECEIVER, FEE);
     await factory.deployed();
     console.log("Factory: ", factory.address);
 
     await new Promise(r => setTimeout(r, 100000)); // time to index new contracts
 
     await hre.run("verify:verify", {
-        address: vault.address,
-        constructorArguments: [],
-    });
-
-    await hre.run("verify:verify", {
         address: factory.address,
         constructorArguments: [WETH, vault.address, DELAY, ADMIN, FEE_RECEIVER, FEE],
     });
-
 }
 
 // We recommend this pattern to be able to use async/await everywhere
