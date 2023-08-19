@@ -5,7 +5,7 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const ETH = ethers.utils.parseEther
 
 describe("VaultsFactory", function () {
-    let vaultsFactory, weth;
+    let vaultsFactory, vaultsImplementation, weth;
     let deployer, adminRole, pauseRole, unpauseRole, deployRole, feeReceiver, nobody, addr1, addr2;
 
     let token1, token2, token3;
@@ -19,6 +19,7 @@ describe("VaultsFactory", function () {
 
         const WethFactory = await ethers.getContractFactory("MockWeth");
         const TokenFactory = await ethers.getContractFactory("MockERC20");
+        const VaultImplementationFactory = await ethers.getContractFactory("VaultImplementation");
         VaultsFactoryFactory = await ethers.getContractFactory("VaultsFactory");
 
         weth = await WethFactory.deploy();
@@ -31,7 +32,10 @@ describe("VaultsFactory", function () {
         token3 = await TokenFactory.deploy("Mock Token3", "MTK3", 33, ETH("1000"));
         await token3.deployed();
 
-        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        vaultsImplementation = await VaultImplementationFactory.deploy();
+        await vaultsImplementation.deployed();
+
+        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await vaultsFactory.deployed();
 
         PAUSE_ROLE = await vaultsFactory.PAUSE_ROLE();
@@ -47,10 +51,11 @@ describe("VaultsFactory", function () {
 
     it("constructor initializes state correctly", async function () {
 
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await newVaultsFactory.deployed();
 
         expect(await newVaultsFactory.weth()).to.equal(weth.address);
+        expect(await newVaultsFactory.vaultsImplementation()).to.equal(vaultsImplementation.address);
         expect(await newVaultsFactory.unwrapDelay()).to.equal(3600);
 
         expect(await newVaultsFactory.hasRole(ADMIN_ROLE, adminRole.address)).to.equal(true);
@@ -76,11 +81,12 @@ describe("VaultsFactory", function () {
     it("constructor initializes state with non-zero fee receiver and fee correctly", async function () {
         const fee = 5;  // assuming this is in basis points, which means 0.05%
 
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, 3600, adminRole.address, feeReceiver.address, fee);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, feeReceiver.address, fee);
         await newVaultsFactory.deployed();
 
         // Check basic properties
         expect(await newVaultsFactory.weth()).to.equal(weth.address);
+        expect(await newVaultsFactory.vaultsImplementation()).to.equal(vaultsImplementation.address);
         expect(await newVaultsFactory.unwrapDelay()).to.equal(3600);
 
         // Check admin roles
@@ -94,7 +100,7 @@ describe("VaultsFactory", function () {
     });
 
     it("smoke roles checks", async function () {
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await newVaultsFactory.deployed();
 
         // ADMIN_ROLE is admin for pause role
@@ -164,11 +170,11 @@ describe("VaultsFactory", function () {
 
         beforeEach(async function() {
             let tx = await vaultsFactory.connect(deployRole).deployVault(token1.address, "VaultToken1", "VTK1");
-            vault1 = (await tx.wait()).events[0].args.vaultAddress
+            vault1 = (await tx.wait()).events[3].args.vaultAddress
             tx = await vaultsFactory.connect(deployRole).deployVault(token2.address, "VaultToken2", "VTK2");
-            vault2 = (await tx.wait()).events[0].args.vaultAddress
+            vault2 = (await tx.wait()).events[3].args.vaultAddress
             tx = await vaultsFactory.connect(deployRole).deployVault(token3.address, "VaultToken2", "VTK2");
-            vault3 = (await tx.wait()).events[0].args.vaultAddress
+            vault3 = (await tx.wait()).events[3].args.vaultAddress
         });
 
         it("pause", async function() {
@@ -273,6 +279,24 @@ describe("VaultsFactory", function () {
 
         await vaultsFactory.connect(adminRole).setUnwrapDelay(3);
         expect(await vaultsFactory.unwrapDelay()).to.equal(3);
+    });
+
+    it("vault implementation", async function () {
+
+        expect(await vaultsFactory.vaultsImplementation()).to.equal(vaultsImplementation.address);
+
+        await expect(vaultsFactory.connect(pauseRole).setVaultsImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(unpauseRole).setVaultsImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(deployRole).setVaultsImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(nobody).setVaultsImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+
+        await expect(vaultsFactory.connect(adminRole).setVaultsImplementation(ZERO_ADDRESS)).to.be.revertedWith("VAULTS: ZERO_ADDRESS");
+
+        expect(await vaultsFactory.vaultsImplementation()).to.equal(vaultsImplementation.address);
+
+        await vaultsFactory.connect(adminRole).setVaultsImplementation(nobody.address);
+        expect(await vaultsFactory.vaultsImplementation()).to.equal(nobody.address);
+
     });
 
     it("fee receiver", async function () {

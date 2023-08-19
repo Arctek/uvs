@@ -7,7 +7,7 @@ const BN = ethers.BigNumber.from;
 const ETH = (x) => ethers.utils.parseEther(x.toString())
 
 describe("Vault", function () {
-    let vaultsFactory, weth;
+    let vaultsFactory, vaultsImplementation, weth;
     let deployer, adminRole, pauseRole, unpauseRole, deployRole, feeReceiver, nobody, addr1, addr2;
 
     let token1, token2, token3;
@@ -22,6 +22,7 @@ describe("Vault", function () {
 
         const WethFactory = await ethers.getContractFactory("MockWeth");
         const TokenFactory = await ethers.getContractFactory("MockERC20");
+        const VaultImplementationFactory = await ethers.getContractFactory("VaultImplementation");
         VaultsFactoryFactory = await ethers.getContractFactory("VaultsFactory");
 
         weth = await WethFactory.deploy();
@@ -34,7 +35,10 @@ describe("Vault", function () {
         token3 = await TokenFactory.deploy("Mock Token3", "MTK3", 33, ETH("1000"));
         await token3.deployed();
 
-        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        vaultsImplementation = await VaultImplementationFactory.deploy();
+        await vaultsImplementation.deployed();
+
+        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await vaultsFactory.deployed();
 
         PAUSE_ROLE = await vaultsFactory.PAUSE_ROLE();
@@ -48,33 +52,37 @@ describe("Vault", function () {
         await vaultsFactory.connect(adminRole).grantRole(DEPLOY_ROLE, deployRole.address);
 
         let tx = await vaultsFactory.connect(deployRole).deployVault(token1.address, "", "");
-        const vault1addr = (await tx.wait()).events[0].args.vaultAddress;
-        vault1 = await ethers.getContractAt('Vault', vault1addr)
+        const vault1addr = (await tx.wait()).events[3].args.vaultAddress;
+        vault1 = await ethers.getContractAt('VaultImplementation', vault1addr)
 
         tx = await vaultsFactory.connect(deployRole).deployVault(token1.address, "", "");
-        const vault2addr = (await tx.wait()).events[0].args.vaultAddress;
-        vault2 = await ethers.getContractAt('Vault', vault2addr)
+        const vault2addr = (await tx.wait()).events[3].args.vaultAddress;
+        vault2 = await ethers.getContractAt('VaultImplementation', vault2addr)
 
         tx = await vaultsFactory.connect(deployRole).deployVault(token1.address, "", "");
-        const vault3addr = (await tx.wait()).events[0].args.vaultAddress;
-        vault3 = await ethers.getContractAt('Vault', vault3addr)
+        const vault3addr = (await tx.wait()).events[3].args.vaultAddress;
+        vault3 = await ethers.getContractAt('VaultImplementation', vault3addr)
 
         tx = await vaultsFactory.connect(deployRole).deployVault(weth.address, "", "");
-        const wethVaultAddr = (await tx.wait()).events[0].args.vaultAddress;
-        wethVault = await ethers.getContractAt('Vault', wethVaultAddr)
+        const wethVaultAddr = (await tx.wait()).events[3].args.vaultAddress;
+        wethVault = await ethers.getContractAt('VaultImplementation', wethVaultAddr)
     });
 
     it("simple deploys and check params", async function () {
+        const vault1proxy = await ethers.getContractAt('ITransparentUpgradeableProxy', vault1.address)
+
         expect(await vault1.name()).to.equal('Vaulted MTK1')
         expect(await vault1.symbol()).to.equal('vMTK1')
         expect(await vault1.decimals()).to.equal(0)
         expect(await vault1.isEth()).to.equal(false)
         expect(await vault1.factory()).to.equal(vaultsFactory.address)
         expect(await vault1.underlyingToken()).to.equal(token1.address)
+        expect(await vault1proxy.connect(adminRole).admin()).to.equal(adminRole.address)
+
 
         let tx = await vaultsFactory.connect(deployRole).deployVault(weth.address, "name", "symbol");
-        const vaultAddr = (await tx.wait()).events[0].args.vaultAddress;
-        const vault = await ethers.getContractAt('Vault', vaultAddr)
+        const vaultAddr = (await tx.wait()).events[3].args.vaultAddress;
+        const vault = await ethers.getContractAt('VaultImplementation', vaultAddr)
 
         expect(await vault.name()).to.equal('name')
         expect(await vault.symbol()).to.equal('symbol')
@@ -83,6 +91,13 @@ describe("Vault", function () {
         expect(await vault.factory()).to.equal(vaultsFactory.address)
         expect(await vault.underlyingToken()).to.equal(weth.address)
     });
+
+    it("reinitialization prohibited", async function () {
+        await expect(vault1.connect(adminRole).initialize(token2.address, vaultsFactory.address, true, "sd", "sd")).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
+        await expect(vault1.connect(nobody).initialize(token2.address, vaultsFactory.address, true, "sd", "sd")).to.be.revertedWith("Initializable: contract is already initialized");
+        await expect(vault1.initialize(token2.address, vaultsFactory.address, true, "sd", "sd")).to.be.revertedWith("Initializable: contract is already initialized");
+    });
+
 
     it("ether methods for non ether", async function () {
         await expect(vault1.wrapEther()).to.be.revertedWith("VAULTS: NOT_ETHER");
@@ -410,7 +425,7 @@ describe("Vault", function () {
         await token1.approve(vault1.address, ETH(1));
         await vault1.wrap(ETH(1))
 
-        await expect(vault1.connect(adminRole).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
+        await expect(vault1.connect(adminRole).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
         await expect(vault1.connect(addr1).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
         await expect(vault1.connect(nobody).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
         await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
@@ -422,7 +437,7 @@ describe("Vault", function () {
 
         await vaultsFactory.connect(adminRole).pauseAllVaults()
 
-        await expect(vault1.connect(adminRole).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
+        await expect(vault1.connect(adminRole).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
         await expect(vault1.connect(addr1).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
         await expect(vault1.connect(nobody).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
         await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
@@ -453,24 +468,42 @@ describe("Vault", function () {
     it("simple permit check", async function () {
         await token1.approve(vault1.address, ETH(1));
         await vault1.wrap(ETH(1))
+        const deadline = BN((await ethers.provider.getBlock()).timestamp + 60);
+        const chainId = (await ethers.provider.getNetwork()).chainId;
 
         expect(await vault1.balanceOf(deployer.address)).to.equal(ETH(1))
 
         await expect(vault1.connect(addr1).transferFrom(deployer.address, nobody.address, 333)).to.be.revertedWith("ERC20: insufficient allowance");
         await expect(vault1.connect(addr2).transferFrom(deployer.address, nobody.address, 333)).to.be.revertedWith("ERC20: insufficient allowance");
 
-        const deadline = BN((await ethers.provider.getBlock()).timestamp + 60);
-        const signature = await getSignature(
-            "Vaulted MTK1",
-            (await ethers.provider.getNetwork()).chainId,
-            vault1.address,
-            deployer,
-            addr1.address,
-            BN(333),
-            BN(0),
-            deadline
-        );
 
+        let signature = await getSignature("Vaulted MTK2", chainId, vault1.address, deployer, addr1.address, BN(333), BN(0), deadline);
+        await expect( vault1.connect(nobody).permit(deployer.address, addr1.address, BN(333), deadline, signature[0], signature[1], signature[2])).to.be.revertedWith("ERC20Permit: invalid signature");
+
+        signature = await getSignature("Vaulted MTK1", 3, vault1.address, deployer, addr1.address, BN(333), BN(0), deadline);
+        await expect( vault1.connect(nobody).permit(deployer.address, addr1.address, BN(333), deadline, signature[0], signature[1], signature[2])).to.be.revertedWith("ERC20Permit: invalid signature");
+
+        signature = await getSignature("Vaulted MTK1", chainId, vault2.address, deployer, addr1.address, BN(333), BN(0), deadline);
+        await expect( vault1.connect(nobody).permit(deployer.address, addr1.address, BN(333), deadline, signature[0], signature[1], signature[2])).to.be.revertedWith("ERC20Permit: invalid signature");
+
+        signature = await getSignature("Vaulted MTK1", chainId, vault1.address, addr2, addr1.address, BN(333), BN(0), deadline);
+        await expect( vault1.connect(nobody).permit(deployer.address, addr1.address, BN(333), deadline, signature[0], signature[1], signature[2])).to.be.revertedWith("ERC20Permit: invalid signature");
+
+        signature = await getSignature("Vaulted MTK1", chainId, vault1.address, deployer, addr2.address, BN(333), BN(0), deadline);
+        await expect( vault1.connect(nobody).permit(deployer.address, addr1.address, BN(333), deadline, signature[0], signature[1], signature[2])).to.be.revertedWith("ERC20Permit: invalid signature");
+
+        signature = await getSignature("Vaulted MTK1", chainId, vault1.address, deployer, addr1.address, BN(333), BN(1), deadline);
+        await expect( vault1.connect(nobody).permit(deployer.address, addr1.address, BN(333), deadline, signature[0], signature[1], signature[2])).to.be.revertedWith("ERC20Permit: invalid signature");
+
+        signature = await getSignature("Vaulted MTK1", chainId, vault1.address, deployer, addr1.address, BN(333), BN(0), 0);
+        await expect( vault1.connect(nobody).permit(deployer.address, addr1.address, BN(333), deadline, signature[0], signature[1], signature[2])).to.be.revertedWith("ERC20Permit: invalid signature");
+
+
+        await expect(vault1.connect(addr1).transferFrom(deployer.address, nobody.address, 333)).to.be.revertedWith("ERC20: insufficient allowance");
+        await expect(vault1.connect(addr2).transferFrom(deployer.address, nobody.address, 333)).to.be.revertedWith("ERC20: insufficient allowance");
+
+
+        signature = await getSignature("Vaulted MTK1", chainId, vault1.address, deployer, addr1.address, BN(333), BN(0), deadline);
         await vault1.connect(nobody).permit(deployer.address, addr1.address, BN(333), deadline, signature[0], signature[1], signature[2])
 
         await expect(vault1.connect(addr1).transferFrom(deployer.address, nobody.address, 334)).to.be.revertedWith("ERC20: insufficient allowance");

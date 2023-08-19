@@ -2,20 +2,20 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "./IVaultsFactory.sol";
 import "./IVault.sol";
 import "./IWETH.sol";
 
 
-contract Vault is IVault, ERC20Permit, ReentrancyGuard {
-    using SafeERC20 for IERC20Metadata;
+contract VaultImplementation is IVault, Initializable, ERC20PermitUpgradeable, ReentrancyGuardUpgradeable {
+    using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
 
-    IERC20Metadata public immutable underlyingToken;
-    IVaultsFactory public immutable factory;
-    bool public immutable isEth;
+    IERC20MetadataUpgradeable public underlyingToken;
+    IVaultsFactory public factory;
+    bool public isEth;
 
     bool public emergency = false;
 
@@ -37,13 +37,13 @@ contract Vault is IVault, ERC20Permit, ReentrancyGuard {
         _;
     }
 
-    constructor(IERC20Metadata underlyingToken_, IVaultsFactory factory_, bool isEth_, string memory name_, string memory symbol_)
-        ERC20Permit(name_)
-        ERC20(name_, symbol_)
-    {
-        underlyingToken = underlyingToken_;
+    function initialize(address underlyingToken_, IVaultsFactory factory_, bool isEth_, string memory name_, string memory symbol_) public initializer {
+        underlyingToken = IERC20MetadataUpgradeable(underlyingToken_);
         factory = factory_;
         isEth = isEth_;
+        __ERC20_init(name_, symbol_);
+        __ERC20Permit_init(name_);
+        __ReentrancyGuard_init();
     }
 
     // only accept ETH via fallback from the WETH contract
