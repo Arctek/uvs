@@ -10,7 +10,7 @@ import "./IVault.sol";
 contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
     address public immutable weth;
 
-    address public vaultsImplementation;
+    address public defaultVaultImplementation;
     uint256 public unwrapDelay;
 
     address public feeReceiver;
@@ -21,8 +21,7 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
 
     // Role identifiers for pausing, deploying, and admin actions
     bytes32 public constant PAUSE_ROLE = keccak256("PAUSE_ROLE");
-    bytes32 public constant UNPAUSE_ROLE = keccak256("UNPAUSE_ROLE");
-    bytes32 public constant DEPLOY_ROLE = keccak256("DEPLOY_ROLE");
+    bytes32 public constant TEAM_ROLE = keccak256("TEAM_ROLE");
 
     event VaultDeployed(IVault vaultAddress);
     event VaultPaused(IVault vaultAddress);
@@ -41,28 +40,27 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
 
     constructor(
         address weth_,
-        address vaultsImplementationAddress_,
+        address vaultImplementationAddress_,
         uint256 unwrapDelay_,
         address rolesAddr_,
         address initialFeeReceiver_,
         uint256 initialFeeBasisPoints_
     ) {
         weth = weth_;
-        vaultsImplementation = vaultsImplementationAddress_;
+        defaultVaultImplementation = vaultImplementationAddress_;
         unwrapDelay = unwrapDelay_;
 
         _setupRole(DEFAULT_ADMIN_ROLE, rolesAddr_);
         _setupRole(PAUSE_ROLE, rolesAddr_);
-        _setupRole(UNPAUSE_ROLE, rolesAddr_);
-        _setupRole(DEPLOY_ROLE, rolesAddr_);
+        _setupRole(TEAM_ROLE, rolesAddr_);
 
         _setFeeReceiver(initialFeeReceiver_);
         _setFeeBasisPoints(initialFeeBasisPoints_);
     }
 
-    function deployVault(address underlyingToken_, string memory name_, string memory symbol_) external onlyRole(DEPLOY_ROLE) returns (IVault result) {
+    function deployVault(address underlyingToken_, string memory name_, string memory symbol_) external onlyRole(TEAM_ROLE) returns (IVault result) {
         TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
-            vaultsImplementation,
+            defaultVaultImplementation,
             getRoleMember(DEFAULT_ADMIN_ROLE, 0),
             ""
         );
@@ -82,7 +80,7 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         emit VaultPaused(vault_);
     }
 
-    function unpauseVault(IVault vaultAddress_) external onlyRole(UNPAUSE_ROLE) isVault(vaultAddress_) {
+    function unpauseVault(IVault vaultAddress_) external onlyRole(DEFAULT_ADMIN_ROLE) isVault(vaultAddress_) {
         delete pausedVaults[vaultAddress_];
         emit VaultUnpaused(vaultAddress_);
     }
@@ -92,7 +90,7 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         emit AllVaultsPaused();
     }
 
-    function unpauseAllVaults() external onlyRole(UNPAUSE_ROLE) {
+    function unpauseAllVaults() external onlyRole(DEFAULT_ADMIN_ROLE) {
         allVaultsPaused = false;
         emit AllVaultsUnpaused();
     }
@@ -105,9 +103,9 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         unwrapDelay = unwrapDelay_;
     }
 
-    function setVaultsImplementation(address vaultsImplementation_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(vaultsImplementation_ != address(0), "VAULTS: ZERO_ADDRESS");
-        vaultsImplementation = vaultsImplementation_;
+    function setDefaultVaultImplementation(address vaultImplementation_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(vaultImplementation_ != address(0), "VAULTS: ZERO_ADDRESS");
+        defaultVaultImplementation = vaultImplementation_;
     }
 
     function emergencyWithdrawFromVault(IVault vaultAddress_, address to_, uint256 amount_) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -119,15 +117,15 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
     }
 
     function _setFeeBasisPoints(uint256 feeBasisPoints_) internal {
-        require(feeBasisPoints_ <= 10000, "VAULTS: EXCESSIVE_FEE_PERCENT");  // Max of 10000 basis points
+        require(feeBasisPoints_ <= 200, "VAULTS: EXCESSIVE_FEE_PERCENT");  // Max 2%
         feeBasisPoints = feeBasisPoints_;
     }
 
-    function setFeeReceiver(address feeReceiver_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setFeeReceiver(address feeReceiver_) external onlyRole(TEAM_ROLE) {
         _setFeeReceiver(feeReceiver_);
     }
 
-    function setFeeBasisPoints(uint256 feeBasisPoints_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setFeeBasisPoints(uint256 feeBasisPoints_) external onlyRole(TEAM_ROLE) {
         _setFeeBasisPoints(feeBasisPoints_);
     }
 }

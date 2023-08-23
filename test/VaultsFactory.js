@@ -5,17 +5,17 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const ETH = ethers.utils.parseEther
 
 describe("VaultsFactory", function () {
-    let vaultsFactory, vaultsImplementation, weth;
-    let deployer, adminRole, pauseRole, unpauseRole, deployRole, feeReceiver, nobody, addr1, addr2;
+    let vaultsFactory, vaultImplementation, weth;
+    let deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2;
 
     let token1, token2, token3;
 
     let VaultsFactoryFactory;
 
-    let PAUSE_ROLE, UNPAUSE_ROLE, DEPLOY_ROLE, ADMIN_ROLE;
+    let PAUSE_ROLE, TEAM_ROLE, ADMIN_ROLE;
 
     beforeEach(async function () {
-        [deployer, adminRole, pauseRole, unpauseRole, deployRole, feeReceiver, nobody, addr1, addr2] = await ethers.getSigners();
+        [deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2] = await ethers.getSigners();
 
         const WethFactory = await ethers.getContractFactory("MockWeth");
         const TokenFactory = await ethers.getContractFactory("MockERC20");
@@ -32,30 +32,28 @@ describe("VaultsFactory", function () {
         token3 = await TokenFactory.deploy("Mock Token3", "MTK3", 33, ETH("1000"));
         await token3.deployed();
 
-        vaultsImplementation = await VaultImplementationFactory.deploy();
-        await vaultsImplementation.deployed();
+        vaultImplementation = await VaultImplementationFactory.deploy();
+        await vaultImplementation.deployed();
 
-        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await vaultsFactory.deployed();
 
         PAUSE_ROLE = await vaultsFactory.PAUSE_ROLE();
-        UNPAUSE_ROLE = await vaultsFactory.UNPAUSE_ROLE();
-        DEPLOY_ROLE = await vaultsFactory.DEPLOY_ROLE();
+        TEAM_ROLE = await vaultsFactory.TEAM_ROLE();
         ADMIN_ROLE = await vaultsFactory.DEFAULT_ADMIN_ROLE();
 
-        // Setting roles for pauseRole, unpauseRole, deployRole
+        // Setting roles for pauseRole, teamRole
         await vaultsFactory.connect(adminRole).grantRole(PAUSE_ROLE, pauseRole.address);
-        await vaultsFactory.connect(adminRole).grantRole(UNPAUSE_ROLE, unpauseRole.address);
-        await vaultsFactory.connect(adminRole).grantRole(DEPLOY_ROLE, deployRole.address);
+        await vaultsFactory.connect(adminRole).grantRole(TEAM_ROLE, teamRole.address);
     });
 
     it("constructor initializes state correctly", async function () {
 
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await newVaultsFactory.deployed();
 
         expect(await newVaultsFactory.weth()).to.equal(weth.address);
-        expect(await newVaultsFactory.vaultsImplementation()).to.equal(vaultsImplementation.address);
+        expect(await newVaultsFactory.defaultVaultImplementation()).to.equal(vaultImplementation.address);
         expect(await newVaultsFactory.unwrapDelay()).to.equal(3600);
 
         expect(await newVaultsFactory.hasRole(ADMIN_ROLE, adminRole.address)).to.equal(true);
@@ -66,13 +64,9 @@ describe("VaultsFactory", function () {
         expect(await newVaultsFactory.getRoleMember(PAUSE_ROLE, 0)).to.equal(adminRole.address);
         expect(await newVaultsFactory.getRoleMemberCount(PAUSE_ROLE)).to.equal(1);
 
-        expect(await newVaultsFactory.hasRole(UNPAUSE_ROLE, adminRole.address)).to.equal(true);
-        expect(await newVaultsFactory.getRoleMember(UNPAUSE_ROLE, 0)).to.equal(adminRole.address);
-        expect(await newVaultsFactory.getRoleMemberCount(UNPAUSE_ROLE)).to.equal(1);
-
-        expect(await newVaultsFactory.hasRole(DEPLOY_ROLE, adminRole.address)).to.equal(true);
-        expect(await newVaultsFactory.getRoleMember(DEPLOY_ROLE, 0)).to.equal(adminRole.address);
-        expect(await newVaultsFactory.getRoleMemberCount(DEPLOY_ROLE)).to.equal(1);
+        expect(await newVaultsFactory.hasRole(TEAM_ROLE, adminRole.address)).to.equal(true);
+        expect(await newVaultsFactory.getRoleMember(TEAM_ROLE, 0)).to.equal(adminRole.address);
+        expect(await newVaultsFactory.getRoleMemberCount(TEAM_ROLE)).to.equal(1);
 
         expect(await newVaultsFactory.feeReceiver()).to.equal(ZERO_ADDRESS);
         expect(await newVaultsFactory.feeBasisPoints()).to.equal(0);
@@ -81,12 +75,12 @@ describe("VaultsFactory", function () {
     it("constructor initializes state with non-zero fee receiver and fee correctly", async function () {
         const fee = 5;  // assuming this is in basis points, which means 0.05%
 
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, feeReceiver.address, fee);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, feeReceiver.address, fee);
         await newVaultsFactory.deployed();
 
         // Check basic properties
         expect(await newVaultsFactory.weth()).to.equal(weth.address);
-        expect(await newVaultsFactory.vaultsImplementation()).to.equal(vaultsImplementation.address);
+        expect(await newVaultsFactory.defaultVaultImplementation()).to.equal(vaultImplementation.address);
         expect(await newVaultsFactory.unwrapDelay()).to.equal(3600);
 
         // Check admin roles
@@ -100,67 +94,46 @@ describe("VaultsFactory", function () {
     });
 
     it("smoke roles checks", async function () {
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await newVaultsFactory.deployed();
 
         // ADMIN_ROLE is admin for pause role
         expect(await vaultsFactory.getRoleAdmin(PAUSE_ROLE)).to.equal(ADMIN_ROLE);
         await expect(vaultsFactory.connect(pauseRole).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(nobody).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
-        // ADMIN_ROLE is admin for unpause role
-        expect(await vaultsFactory.getRoleAdmin(UNPAUSE_ROLE)).to.equal(ADMIN_ROLE);
-        await expect(vaultsFactory.connect(pauseRole).grantRole(UNPAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).grantRole(UNPAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).grantRole(UNPAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(nobody).grantRole(UNPAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-
         // ADMIN_ROLE is admin for deploy role
-        expect(await vaultsFactory.getRoleAdmin(DEPLOY_ROLE)).to.equal(ADMIN_ROLE);
-        await expect(vaultsFactory.connect(pauseRole).grantRole(DEPLOY_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).grantRole(DEPLOY_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).grantRole(DEPLOY_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(nobody).grantRole(DEPLOY_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        expect(await vaultsFactory.getRoleAdmin(TEAM_ROLE)).to.equal(ADMIN_ROLE);
+        await expect(vaultsFactory.connect(pauseRole).grantRole(TEAM_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).grantRole(TEAM_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(nobody).grantRole(TEAM_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
         // ADMIN_ROLE is admin for admin role
         expect(await vaultsFactory.getRoleAdmin(ADMIN_ROLE)).to.equal(ADMIN_ROLE);
         await expect(vaultsFactory.connect(pauseRole).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(nobody).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
         await vaultsFactory.connect(adminRole).grantRole(PAUSE_ROLE, pauseRole.address);
-        await vaultsFactory.connect(adminRole).grantRole(UNPAUSE_ROLE, unpauseRole.address);
-        await vaultsFactory.connect(adminRole).grantRole(DEPLOY_ROLE, deployRole.address);
+        await vaultsFactory.connect(adminRole).grantRole(TEAM_ROLE, teamRole.address);
 
         // ADMIN_ROLE is admin for pause role
         expect(await vaultsFactory.getRoleAdmin(PAUSE_ROLE)).to.equal(ADMIN_ROLE);
         await expect(vaultsFactory.connect(pauseRole).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(nobody).grantRole(PAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
-        // ADMIN_ROLE is admin for unpause role
-        expect(await vaultsFactory.getRoleAdmin(UNPAUSE_ROLE)).to.equal(ADMIN_ROLE);
-        await expect(vaultsFactory.connect(pauseRole).grantRole(UNPAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).grantRole(UNPAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).grantRole(UNPAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(nobody).grantRole(UNPAUSE_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-
         // ADMIN_ROLE is admin for deploy role
-        expect(await vaultsFactory.getRoleAdmin(DEPLOY_ROLE)).to.equal(ADMIN_ROLE);
-        await expect(vaultsFactory.connect(pauseRole).grantRole(DEPLOY_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).grantRole(DEPLOY_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).grantRole(DEPLOY_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(nobody).grantRole(DEPLOY_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        expect(await vaultsFactory.getRoleAdmin(TEAM_ROLE)).to.equal(ADMIN_ROLE);
+        await expect(vaultsFactory.connect(pauseRole).grantRole(TEAM_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).grantRole(TEAM_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(nobody).grantRole(TEAM_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
         // ADMIN_ROLE is admin for admin role
         expect(await vaultsFactory.getRoleAdmin(ADMIN_ROLE)).to.equal(ADMIN_ROLE);
         await expect(vaultsFactory.connect(pauseRole).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(nobody).grantRole(ADMIN_ROLE, nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
     });
 
@@ -169,11 +142,11 @@ describe("VaultsFactory", function () {
         let vault1, vault2, vault3;
 
         beforeEach(async function() {
-            let tx = await vaultsFactory.connect(deployRole).deployVault(token1.address, "VaultToken1", "VTK1");
+            let tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "VaultToken1", "VTK1");
             vault1 = (await tx.wait()).events[3].args.vaultAddress
-            tx = await vaultsFactory.connect(deployRole).deployVault(token2.address, "VaultToken2", "VTK2");
+            tx = await vaultsFactory.connect(teamRole).deployVault(token2.address, "VaultToken2", "VTK2");
             vault2 = (await tx.wait()).events[3].args.vaultAddress
-            tx = await vaultsFactory.connect(deployRole).deployVault(token3.address, "VaultToken2", "VTK2");
+            tx = await vaultsFactory.connect(teamRole).deployVault(token3.address, "VaultToken2", "VTK2");
             vault3 = (await tx.wait()).events[3].args.vaultAddress
         });
 
@@ -191,9 +164,8 @@ describe("VaultsFactory", function () {
             expect(await vaultsFactory.isPaused(vault3)).to.be.false;
 
 
-            // unpauseRole, deployRole, and others shouldn't be able to pause the vault
-            await expect(vaultsFactory.connect(unpauseRole).pauseVault(vault3)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + PAUSE_ROLE);
-            await expect(vaultsFactory.connect(deployRole).pauseVault(vault3)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + PAUSE_ROLE);
+            // teamRole, and others shouldn't be able to pause the vault
+            await expect(vaultsFactory.connect(teamRole).pauseVault(vault3)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + PAUSE_ROLE);
             await expect(vaultsFactory.connect(nobody).pauseVault(vault3)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + PAUSE_ROLE);
 
             // non vault
@@ -207,13 +179,13 @@ describe("VaultsFactory", function () {
             expect(await vaultsFactory.isPaused(vault1)).to.be.true;
             expect(await vaultsFactory.isPaused(vault2)).to.be.true;
 
-            // pauseRole, deployRole, and others shouldn't be able to unpause the vault
-            await expect(vaultsFactory.connect(pauseRole).unpauseVault(vault1)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + UNPAUSE_ROLE);
-            await expect(vaultsFactory.connect(deployRole).unpauseVault(vault1)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + UNPAUSE_ROLE);
-            await expect(vaultsFactory.connect(nobody).unpauseVault(vault1)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + UNPAUSE_ROLE);
+            // pauseRole, teamRole, and others shouldn't be able to unpause the vault
+            await expect(vaultsFactory.connect(pauseRole).unpauseVault(vault1)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+            await expect(vaultsFactory.connect(teamRole).unpauseVault(vault1)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+            await expect(vaultsFactory.connect(nobody).unpauseVault(vault1)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
-            // unpauseRole should be able to unpause the vault
-            await expect(vaultsFactory.connect(unpauseRole).unpauseVault(vault1))
+            // adminRole should be able to unpause the vault
+            await expect(vaultsFactory.connect(adminRole).unpauseVault(vault1))
                 .to.emit(vaultsFactory, "VaultUnpaused")
                 .withArgs(vault1);
 
@@ -221,13 +193,13 @@ describe("VaultsFactory", function () {
             expect(await vaultsFactory.isPaused(vault2)).to.be.true;
 
             // adminRole should be able to unpause the vault
-            await expect(vaultsFactory.connect(unpauseRole).unpauseVault(vault1))
+            await expect(vaultsFactory.connect(adminRole).unpauseVault(vault1))
                 .to.emit(vaultsFactory, "VaultUnpaused")
                 .withArgs(vault1);
 
             // non vault
-            await expect(vaultsFactory.connect(unpauseRole).unpauseVault(token1.address)).to.be.revertedWith("VAULTS: NOT_VAULT");
-            await expect(vaultsFactory.connect(unpauseRole).unpauseVault(nobody.address)).to.be.revertedWith("function returned an unexpected amount of data");
+            await expect(vaultsFactory.connect(adminRole).unpauseVault(token1.address)).to.be.revertedWith("VAULTS: NOT_VAULT");
+            await expect(vaultsFactory.connect(adminRole).unpauseVault(nobody.address)).to.be.revertedWith("function returned an unexpected amount of data");
         });
 
         it("pause/unpause all", async function () {
@@ -243,21 +215,20 @@ describe("VaultsFactory", function () {
             expect(await vaultsFactory.isPaused(vault1)).to.be.true;
             expect(await vaultsFactory.isPaused(vault2)).to.be.true;
 
-            // pauseRole, deployRole, and others shouldn't be able to unpause all vaults
-            await expect(vaultsFactory.connect(pauseRole).unpauseAllVaults()).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + UNPAUSE_ROLE);
-            await expect(vaultsFactory.connect(deployRole).unpauseAllVaults()).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + UNPAUSE_ROLE);
-            await expect(vaultsFactory.connect(nobody).unpauseAllVaults()).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + UNPAUSE_ROLE);
+            // pauseRole, teamRole, and others shouldn't be able to unpause all vaults
+            await expect(vaultsFactory.connect(pauseRole).unpauseAllVaults()).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+            await expect(vaultsFactory.connect(teamRole).unpauseAllVaults()).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+            await expect(vaultsFactory.connect(nobody).unpauseAllVaults()).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
-            // unpauseRole should be able to unpause all vaults
-            await expect(vaultsFactory.connect(unpauseRole).unpauseAllVaults())
+            // adminRole should be able to unpause all vaults
+            await expect(vaultsFactory.connect(adminRole).unpauseAllVaults())
                 .to.emit(vaultsFactory, "AllVaultsUnpaused");
 
             expect(await vaultsFactory.isPaused(vault1)).to.be.false;
             expect(await vaultsFactory.isPaused(vault2)).to.be.false;
 
-            // unpauseRole, deployRole, and others shouldn't be able to pause all vaults
-            await expect(vaultsFactory.connect(unpauseRole).pauseAllVaults()).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + PAUSE_ROLE);
-            await expect(vaultsFactory.connect(deployRole).pauseAllVaults()).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + PAUSE_ROLE);
+            // teamRole, and others shouldn't be able to pause all vaults
+            await expect(vaultsFactory.connect(teamRole).pauseAllVaults()).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + PAUSE_ROLE);
             await expect(vaultsFactory.connect(nobody).pauseAllVaults()).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + PAUSE_ROLE);
 
             expect(await vaultsFactory.isPaused(vault1)).to.be.false;
@@ -271,8 +242,7 @@ describe("VaultsFactory", function () {
         expect(await vaultsFactory.unwrapDelay()).to.equal(3600);
 
         await expect(vaultsFactory.connect(pauseRole).setUnwrapDelay(3)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).setUnwrapDelay(3)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).setUnwrapDelay(3)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).setUnwrapDelay(3)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(nobody).setUnwrapDelay(3)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
         expect(await vaultsFactory.unwrapDelay()).to.equal(3600);
@@ -283,19 +253,18 @@ describe("VaultsFactory", function () {
 
     it("vault implementation", async function () {
 
-        expect(await vaultsFactory.vaultsImplementation()).to.equal(vaultsImplementation.address);
+        expect(await vaultsFactory.defaultVaultImplementation()).to.equal(vaultImplementation.address);
 
-        await expect(vaultsFactory.connect(pauseRole).setVaultsImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).setVaultsImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).setVaultsImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(nobody).setVaultsImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(pauseRole).setDefaultVaultImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).setDefaultVaultImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(nobody).setDefaultVaultImplementation(nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
-        await expect(vaultsFactory.connect(adminRole).setVaultsImplementation(ZERO_ADDRESS)).to.be.revertedWith("VAULTS: ZERO_ADDRESS");
+        await expect(vaultsFactory.connect(adminRole).setDefaultVaultImplementation(ZERO_ADDRESS)).to.be.revertedWith("VAULTS: ZERO_ADDRESS");
 
-        expect(await vaultsFactory.vaultsImplementation()).to.equal(vaultsImplementation.address);
+        expect(await vaultsFactory.defaultVaultImplementation()).to.equal(vaultImplementation.address);
 
-        await vaultsFactory.connect(adminRole).setVaultsImplementation(nobody.address);
-        expect(await vaultsFactory.vaultsImplementation()).to.equal(nobody.address);
+        await vaultsFactory.connect(adminRole).setDefaultVaultImplementation(nobody.address);
+        expect(await vaultsFactory.defaultVaultImplementation()).to.equal(nobody.address);
 
     });
 
@@ -303,14 +272,12 @@ describe("VaultsFactory", function () {
 
         expect(await vaultsFactory.feeReceiver()).to.equal(ZERO_ADDRESS);
 
-        await expect(vaultsFactory.connect(pauseRole).setFeeReceiver(nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).setFeeReceiver(nobody.address)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).setFeeReceiver(nobody.address)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(nobody).setFeeReceiver(nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(pauseRole).setFeeReceiver(nobody.address)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + TEAM_ROLE);
+        await expect(vaultsFactory.connect(nobody).setFeeReceiver(nobody.address)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + TEAM_ROLE);
 
         expect(await vaultsFactory.feeReceiver()).to.equal(ZERO_ADDRESS);
 
-        await vaultsFactory.connect(adminRole).setFeeReceiver(nobody.address);
+        await vaultsFactory.connect(teamRole).setFeeReceiver(nobody.address);
         expect(await vaultsFactory.feeReceiver()).to.equal(nobody.address);
     });
 
@@ -318,25 +285,22 @@ describe("VaultsFactory", function () {
 
         expect(await vaultsFactory.feeBasisPoints()).to.equal(0);
 
-        await expect(vaultsFactory.connect(pauseRole).setFeeBasisPoints(3)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).setFeeBasisPoints(3)).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).setFeeBasisPoints(3)).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(nobody).setFeeBasisPoints(3)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(pauseRole).setFeeBasisPoints(3)).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + TEAM_ROLE);
+        await expect(vaultsFactory.connect(nobody).setFeeBasisPoints(3)).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + TEAM_ROLE);
 
-        await expect(vaultsFactory.connect(adminRole).setFeeBasisPoints(10001)).to.be.revertedWith("VAULTS: EXCESSIVE_FEE_PERCENT");
+        await expect(vaultsFactory.connect(adminRole).setFeeBasisPoints(201)).to.be.revertedWith("VAULTS: EXCESSIVE_FEE_PERCENT");
 
         expect(await vaultsFactory.feeBasisPoints()).to.equal(0);
 
-        await vaultsFactory.connect(adminRole).setFeeBasisPoints(3);
+        await vaultsFactory.connect(teamRole).setFeeBasisPoints(3);
         expect(await vaultsFactory.feeBasisPoints()).to.equal(3);
     });
 
     it("deploy", async function () {
-        await expect(vaultsFactory.connect(pauseRole).deployVault(token1.address, "", "")).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + DEPLOY_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).deployVault(token1.address, "", "")).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + DEPLOY_ROLE);
-        await expect(vaultsFactory.connect(nobody).deployVault(token1.address, "", "")).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + DEPLOY_ROLE);
+        await expect(vaultsFactory.connect(pauseRole).deployVault(token1.address, "", "")).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + TEAM_ROLE);
+        await expect(vaultsFactory.connect(nobody).deployVault(token1.address, "", "")).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + TEAM_ROLE);
 
-        await expect(vaultsFactory.connect(deployRole).deployVault(token1.address, "", ""))
+        await expect(vaultsFactory.connect(teamRole).deployVault(token1.address, "", ""))
             .to.emit(vaultsFactory, "VaultDeployed");
     });
 

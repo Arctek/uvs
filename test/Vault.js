@@ -7,18 +7,18 @@ const BN = ethers.BigNumber.from;
 const ETH = (x) => ethers.utils.parseEther(x.toString())
 
 describe("Vault", function () {
-    let vaultsFactory, vaultsImplementation, weth;
-    let deployer, adminRole, pauseRole, unpauseRole, deployRole, feeReceiver, nobody, addr1, addr2;
+    let vaultsFactory, vaultImplementation, weth;
+    let deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2;
 
     let token1, token2, token3;
     let vault1, vault2, vault3, wethVault;
 
     let VaultsFactoryFactory;
 
-    let PAUSE_ROLE, UNPAUSE_ROLE, DEPLOY_ROLE, ADMIN_ROLE;
+    let PAUSE_ROLE, TEAM_ROLE, ADMIN_ROLE;
 
     beforeEach(async function () {
-        [deployer, adminRole, pauseRole, unpauseRole, deployRole, feeReceiver, nobody, addr1, addr2] = await ethers.getSigners();
+        [deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2] = await ethers.getSigners();
 
         const WethFactory = await ethers.getContractFactory("MockWeth");
         const TokenFactory = await ethers.getContractFactory("MockERC20");
@@ -35,35 +35,33 @@ describe("Vault", function () {
         token3 = await TokenFactory.deploy("Mock Token3", "MTK3", 33, ETH("1000"));
         await token3.deployed();
 
-        vaultsImplementation = await VaultImplementationFactory.deploy();
-        await vaultsImplementation.deployed();
+        vaultImplementation = await VaultImplementationFactory.deploy();
+        await vaultImplementation.deployed();
 
-        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultsImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await vaultsFactory.deployed();
 
         PAUSE_ROLE = await vaultsFactory.PAUSE_ROLE();
-        UNPAUSE_ROLE = await vaultsFactory.UNPAUSE_ROLE();
-        DEPLOY_ROLE = await vaultsFactory.DEPLOY_ROLE();
+        TEAM_ROLE = await vaultsFactory.TEAM_ROLE();
         ADMIN_ROLE = await vaultsFactory.DEFAULT_ADMIN_ROLE();
 
-        // Setting roles for pauseRole, unpauseRole, deployRole
+        // Setting roles for pauseRole, teamRole
         await vaultsFactory.connect(adminRole).grantRole(PAUSE_ROLE, pauseRole.address);
-        await vaultsFactory.connect(adminRole).grantRole(UNPAUSE_ROLE, unpauseRole.address);
-        await vaultsFactory.connect(adminRole).grantRole(DEPLOY_ROLE, deployRole.address);
+        await vaultsFactory.connect(adminRole).grantRole(TEAM_ROLE, teamRole.address);
 
-        let tx = await vaultsFactory.connect(deployRole).deployVault(token1.address, "", "");
+        let tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "", "");
         const vault1addr = (await tx.wait()).events[3].args.vaultAddress;
         vault1 = await ethers.getContractAt('VaultImplementation', vault1addr)
 
-        tx = await vaultsFactory.connect(deployRole).deployVault(token1.address, "", "");
+        tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "", "");
         const vault2addr = (await tx.wait()).events[3].args.vaultAddress;
         vault2 = await ethers.getContractAt('VaultImplementation', vault2addr)
 
-        tx = await vaultsFactory.connect(deployRole).deployVault(token1.address, "", "");
+        tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "", "");
         const vault3addr = (await tx.wait()).events[3].args.vaultAddress;
         vault3 = await ethers.getContractAt('VaultImplementation', vault3addr)
 
-        tx = await vaultsFactory.connect(deployRole).deployVault(weth.address, "", "");
+        tx = await vaultsFactory.connect(teamRole).deployVault(weth.address, "", "");
         const wethVaultAddr = (await tx.wait()).events[3].args.vaultAddress;
         wethVault = await ethers.getContractAt('VaultImplementation', wethVaultAddr)
     });
@@ -80,7 +78,7 @@ describe("Vault", function () {
         expect(await vault1proxy.connect(adminRole).admin()).to.equal(adminRole.address)
 
 
-        let tx = await vaultsFactory.connect(deployRole).deployVault(weth.address, "name", "symbol");
+        let tx = await vaultsFactory.connect(teamRole).deployVault(weth.address, "name", "symbol");
         const vaultAddr = (await tx.wait()).events[3].args.vaultAddress;
         const vault = await ethers.getContractAt('VaultImplementation', vaultAddr)
 
@@ -430,8 +428,7 @@ describe("Vault", function () {
         await expect(vault1.connect(nobody).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
         await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(pauseRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
 
 
@@ -442,8 +439,7 @@ describe("Vault", function () {
         await expect(vault1.connect(nobody).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
         await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(pauseRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(unpauseRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + unpauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(deployRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + deployRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
 
         await expect(vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, ZERO_ADDRESS, ETH(1))).to.be.revertedWith("VAULTS: ZERO_ADDRESS");
