@@ -6,7 +6,7 @@ const ETH = ethers.utils.parseEther
 
 describe("VaultsFactory", function () {
     let vaultsFactory, vaultImplementation, weth;
-    let deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2;
+    let deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2, emergencyWithdrawAddress;
 
     let token1, token2, token3;
 
@@ -15,7 +15,7 @@ describe("VaultsFactory", function () {
     let PAUSE_ROLE, TEAM_ROLE, ADMIN_ROLE;
 
     beforeEach(async function () {
-        [deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2] = await ethers.getSigners();
+        [deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2, emergencyWithdrawAddress] = await ethers.getSigners();
 
         const WethFactory = await ethers.getContractFactory("MockWeth");
         const TokenFactory = await ethers.getContractFactory("MockERC20");
@@ -35,7 +35,7 @@ describe("VaultsFactory", function () {
         vaultImplementation = await VaultImplementationFactory.deploy();
         await vaultImplementation.deployed();
 
-        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0, emergencyWithdrawAddress.address);
         await vaultsFactory.deployed();
 
         PAUSE_ROLE = await vaultsFactory.PAUSE_ROLE();
@@ -49,7 +49,7 @@ describe("VaultsFactory", function () {
 
     it("constructor initializes state correctly", async function () {
 
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0, emergencyWithdrawAddress.address);
         await newVaultsFactory.deployed();
 
         expect(await newVaultsFactory.weth()).to.equal(weth.address);
@@ -70,12 +70,26 @@ describe("VaultsFactory", function () {
 
         expect(await newVaultsFactory.feeReceiver()).to.equal(ZERO_ADDRESS);
         expect(await newVaultsFactory.feeBasisPoints()).to.equal(0);
+        
+        expect(await newVaultsFactory.emergencyWithdrawAddress()).to.equal(emergencyWithdrawAddress.address);
+    });
+
+
+    it("constructor negative", async function () {
+
+        await expect(VaultsFactoryFactory.deploy(ZERO_ADDRESS, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0, emergencyWithdrawAddress.address))
+            .to.be.revertedWith("VAULTS: ZERO_ADDRESS");
+        await expect(VaultsFactoryFactory.deploy(weth.address, ZERO_ADDRESS, 3600, adminRole.address, ZERO_ADDRESS, 0, emergencyWithdrawAddress.address))
+            .to.be.revertedWith("VAULTS: ZERO_ADDRESS");
+        await expect(VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0, ZERO_ADDRESS))
+            .to.be.revertedWith("VAULTS: ZERO_ADDRESS");
+
     });
 
     it("constructor initializes state with non-zero fee receiver and fee correctly", async function () {
         const fee = 5;  // assuming this is in basis points, which means 0.05%
 
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, feeReceiver.address, fee);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, feeReceiver.address, fee, emergencyWithdrawAddress.address);
         await newVaultsFactory.deployed();
 
         // Check basic properties
@@ -94,7 +108,7 @@ describe("VaultsFactory", function () {
     });
 
     it("smoke roles checks", async function () {
-        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        const newVaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0, emergencyWithdrawAddress.address);
         await newVaultsFactory.deployed();
 
         // ADMIN_ROLE is admin for pause role

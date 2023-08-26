@@ -8,7 +8,7 @@ const ETH = (x) => ethers.utils.parseEther(x.toString())
 
 describe("Vault", function () {
     let vaultsFactory, vaultImplementation, weth;
-    let deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2;
+    let deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2, emergencyWithdrawAddress;
 
     let token1, token2, token3;
     let vault1, vault2, vault3, wethVault;
@@ -18,7 +18,7 @@ describe("Vault", function () {
     let PAUSE_ROLE, TEAM_ROLE, ADMIN_ROLE;
 
     beforeEach(async function () {
-        [deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2] = await ethers.getSigners();
+        [deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2, emergencyWithdrawAddress] = await ethers.getSigners();
 
         const WethFactory = await ethers.getContractFactory("MockWeth");
         const TokenFactory = await ethers.getContractFactory("MockERC20");
@@ -38,7 +38,7 @@ describe("Vault", function () {
         vaultImplementation = await VaultImplementationFactory.deploy();
         await vaultImplementation.deployed();
 
-        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
+        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0, emergencyWithdrawAddress.address);
         await vaultsFactory.deployed();
 
         PAUSE_ROLE = await vaultsFactory.PAUSE_ROLE();
@@ -423,34 +423,31 @@ describe("Vault", function () {
         await token1.approve(vault1.address, ETH(1));
         await vault1.wrap(ETH(1))
 
-        await expect(vault1.connect(adminRole).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
-        await expect(vault1.connect(addr1).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
-        await expect(vault1.connect(nobody).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
-        await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(pauseRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(teamRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
+        await expect(vault1.connect(adminRole).emergencyWithdraw(ETH(1))).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
+        await expect(vault1.connect(addr1).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
+        await expect(vault1.connect(nobody).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
+        await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(pauseRole).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
 
 
         await vaultsFactory.connect(adminRole).pauseAllVaults()
 
-        await expect(vault1.connect(adminRole).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
-        await expect(vault1.connect(addr1).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
-        await expect(vault1.connect(nobody).emergencyWithdraw(nobody.address, ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
-        await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(pauseRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
-        await expect(vaultsFactory.connect(teamRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH(1))).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vault1.connect(adminRole).emergencyWithdraw(ETH(1))).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
+        await expect(vault1.connect(addr1).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
+        await expect(vault1.connect(nobody).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
+        await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(pauseRole).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(teamRole).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
+        expect(await token1.balanceOf(emergencyWithdrawAddress.address)).to.equal(0);
 
-        await expect(vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, ZERO_ADDRESS, ETH(1))).to.be.revertedWith("VAULTS: ZERO_ADDRESS");
+        await vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, ETH('0.3'));
+        expect(await token1.balanceOf(emergencyWithdrawAddress.address)).to.equal(ETH('0.3'));
 
-        expect(await token1.balanceOf(nobody.address)).to.equal(0);
-
-        await vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, nobody.address, ETH('0.3'));
-        expect(await token1.balanceOf(nobody.address)).to.equal(ETH('0.3'));
-
-        await vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, nobody.address, 0);
-        expect(await token1.balanceOf(nobody.address)).to.equal(ETH('1'));
+        await vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, 0);
+        expect(await token1.balanceOf(emergencyWithdrawAddress.address)).to.equal(ETH('1'));
 
         await vaultsFactory.connect(adminRole).unpauseAllVaults()
 

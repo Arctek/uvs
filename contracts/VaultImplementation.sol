@@ -120,15 +120,17 @@ contract VaultImplementation is IVault, Initializable, ERC20PermitUpgradeable, R
         emit UnwrapCancelled(msg.sender, amount);
     }
 
-    function emergencyWithdraw(address to_, uint256 amount_) external nonReentrant {
+    function emergencyWithdraw(uint256 amount_) external nonReentrant {
         require(factory.isPaused(this), "VAULTS: NOT_PAUSED");
         require(msg.sender == address(factory), "VAULTS: NOT_FACTORY_ADDRESS");
-        require(to_ != address(0), "VAULTS: ZERO_ADDRESS");
+
+        address emergencyWithdrawAddress = factory.emergencyWithdrawAddress();
+        require(emergencyWithdrawAddress != address(0), "VAULTS: ZERO_ADDRESS");
 
         emergency = true;
 
         uint256 withdrawalAmount = (amount_ == 0) ? underlyingToken.balanceOf(address(this)) : amount_;
-        underlyingToken.safeTransfer(to_, withdrawalAmount);
+        underlyingToken.safeTransfer(emergencyWithdrawAddress, withdrawalAmount);
     }
 
     function _beforeTokenTransfer(address from, address /* to */, uint256 amount) internal view override {

@@ -9,6 +9,7 @@ import "./IVault.sol";
 
 contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
     address public immutable weth;
+    address public immutable emergencyWithdrawAddress;
 
     address public defaultVaultImplementation;
     uint256 public unwrapDelay;
@@ -44,8 +45,13 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         uint256 unwrapDelay_,
         address rolesAddr_,
         address initialFeeReceiver_,
-        uint256 initialFeeBasisPoints_
+        uint256 initialFeeBasisPoints_,
+        address emergencyWithdrawAddress_
     ) {
+        require(weth_ != address(0), "VAULTS: ZERO_ADDRESS");
+        require(vaultImplementationAddress_ != address(0), "VAULTS: ZERO_ADDRESS");
+        require(emergencyWithdrawAddress_ != address(0), "VAULTS: ZERO_ADDRESS");
+
         weth = weth_;
         defaultVaultImplementation = vaultImplementationAddress_;
         unwrapDelay = unwrapDelay_;
@@ -56,6 +62,8 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
 
         _setFeeReceiver(initialFeeReceiver_);
         _setFeeBasisPoints(initialFeeBasisPoints_);
+
+        emergencyWithdrawAddress = emergencyWithdrawAddress_;
     }
 
     function deployVault(address underlyingToken_, string memory name_, string memory symbol_) external onlyRole(TEAM_ROLE) returns (IVault result) {
@@ -108,8 +116,8 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
         defaultVaultImplementation = vaultImplementation_;
     }
 
-    function emergencyWithdrawFromVault(IVault vaultAddress_, address to_, uint256 amount_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        vaultAddress_.emergencyWithdraw(to_, amount_);
+    function emergencyWithdrawFromVault(IVault vaultAddress_, uint256 amount_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        vaultAddress_.emergencyWithdraw(amount_);
     }
 
     function _setFeeReceiver(address feeReceiver_) internal {
