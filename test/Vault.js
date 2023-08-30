@@ -7,8 +7,8 @@ const BN = ethers.BigNumber.from;
 const ETH = (x) => ethers.utils.parseEther(x.toString())
 
 describe("Vault", function () {
-    let vaultsFactory, vaultImplementation, weth;
-    let deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2, emergencyWithdrawAddress;
+    let vaultsFactory, weth;
+    let deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2;
 
     let token1, token2, token3;
     let vault1, vault2, vault3, wethVault;
@@ -18,11 +18,10 @@ describe("Vault", function () {
     let PAUSE_ROLE, TEAM_ROLE, ADMIN_ROLE;
 
     beforeEach(async function () {
-        [deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2, emergencyWithdrawAddress] = await ethers.getSigners();
+        [deployer, adminRole, pauseRole, teamRole, feeReceiver, nobody, addr1, addr2] = await ethers.getSigners();
 
         const WethFactory = await ethers.getContractFactory("MockWeth");
         const TokenFactory = await ethers.getContractFactory("MockERC20");
-        const VaultImplementationFactory = await ethers.getContractFactory("VaultImplementation");
         VaultsFactoryFactory = await ethers.getContractFactory("VaultsFactory");
 
         weth = await WethFactory.deploy();
@@ -35,10 +34,7 @@ describe("Vault", function () {
         token3 = await TokenFactory.deploy("Mock Token3", "MTK3", 33, ETH("1000"));
         await token3.deployed();
 
-        vaultImplementation = await VaultImplementationFactory.deploy();
-        await vaultImplementation.deployed();
-
-        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, vaultImplementation.address, 3600, adminRole.address, ZERO_ADDRESS, 0, emergencyWithdrawAddress.address);
+        vaultsFactory = await VaultsFactoryFactory.deploy(weth.address, 3600, adminRole.address, ZERO_ADDRESS, 0);
         await vaultsFactory.deployed();
 
         PAUSE_ROLE = await vaultsFactory.PAUSE_ROLE();
@@ -50,37 +46,33 @@ describe("Vault", function () {
         await vaultsFactory.connect(adminRole).grantRole(TEAM_ROLE, teamRole.address);
 
         let tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "", "");
-        const vault1addr = (await tx.wait()).events[3].args.vaultAddress;
-        vault1 = await ethers.getContractAt('VaultImplementation', vault1addr)
+        const vault1addr = (await tx.wait()).events[0].args.vaultAddress;
+        vault1 = await ethers.getContractAt('Vault', vault1addr)
 
         tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "", "");
-        const vault2addr = (await tx.wait()).events[3].args.vaultAddress;
-        vault2 = await ethers.getContractAt('VaultImplementation', vault2addr)
+        const vault2addr = (await tx.wait()).events[0].args.vaultAddress;
+        vault2 = await ethers.getContractAt('Vault', vault2addr)
 
         tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "", "");
-        const vault3addr = (await tx.wait()).events[3].args.vaultAddress;
-        vault3 = await ethers.getContractAt('VaultImplementation', vault3addr)
+        const vault3addr = (await tx.wait()).events[0].args.vaultAddress;
+        vault3 = await ethers.getContractAt('Vault', vault3addr)
 
         tx = await vaultsFactory.connect(teamRole).deployVault(weth.address, "", "");
-        const wethVaultAddr = (await tx.wait()).events[3].args.vaultAddress;
-        wethVault = await ethers.getContractAt('VaultImplementation', wethVaultAddr)
+        const wethVaultAddr = (await tx.wait()).events[0].args.vaultAddress;
+        wethVault = await ethers.getContractAt('Vault', wethVaultAddr)
     });
 
     it("simple deploys and check params", async function () {
-        const vault1proxy = await ethers.getContractAt('ITransparentUpgradeableProxy', vault1.address)
-
         expect(await vault1.name()).to.equal('Vaulted MTK1')
         expect(await vault1.symbol()).to.equal('vMTK1')
         expect(await vault1.decimals()).to.equal(0)
         expect(await vault1.isEth()).to.equal(false)
         expect(await vault1.factory()).to.equal(vaultsFactory.address)
         expect(await vault1.underlyingToken()).to.equal(token1.address)
-        expect(await vault1proxy.connect(adminRole).admin()).to.equal(adminRole.address)
-
 
         let tx = await vaultsFactory.connect(teamRole).deployVault(weth.address, "name", "symbol");
-        const vaultAddr = (await tx.wait()).events[3].args.vaultAddress;
-        const vault = await ethers.getContractAt('VaultImplementation', vaultAddr)
+        const vaultAddr = (await tx.wait()).events[0].args.vaultAddress;
+        const vault = await ethers.getContractAt('Vault', vaultAddr)
 
         expect(await vault.name()).to.equal('name')
         expect(await vault.symbol()).to.equal('symbol')
@@ -89,13 +81,6 @@ describe("Vault", function () {
         expect(await vault.factory()).to.equal(vaultsFactory.address)
         expect(await vault.underlyingToken()).to.equal(weth.address)
     });
-
-    it("reinitialization prohibited", async function () {
-        await expect(vault1.connect(adminRole).initialize(token2.address, vaultsFactory.address, true, "sd", "sd")).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
-        await expect(vault1.connect(nobody).initialize(token2.address, vaultsFactory.address, true, "sd", "sd")).to.be.revertedWith("Initializable: contract is already initialized");
-        await expect(vault1.initialize(token2.address, vaultsFactory.address, true, "sd", "sd")).to.be.revertedWith("Initializable: contract is already initialized");
-    });
-
 
     it("ether methods for non ether", async function () {
         await expect(vault1.wrapEther()).to.be.revertedWith("VAULTS: NOT_ETHER");
@@ -423,7 +408,7 @@ describe("Vault", function () {
         await token1.approve(vault1.address, ETH(1));
         await vault1.wrap(ETH(1))
 
-        await expect(vault1.connect(adminRole).emergencyWithdraw(ETH(1))).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
+        await expect(vault1.connect(adminRole).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
         await expect(vault1.connect(addr1).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
         await expect(vault1.connect(nobody).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_PAUSED");
         await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
@@ -434,20 +419,20 @@ describe("Vault", function () {
 
         await vaultsFactory.connect(adminRole).pauseAllVaults()
 
-        await expect(vault1.connect(adminRole).emergencyWithdraw(ETH(1))).to.be.revertedWith("TransparentUpgradeableProxy: admin cannot fallback to proxy target");
+        await expect(vault1.connect(adminRole).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
         await expect(vault1.connect(addr1).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
         await expect(vault1.connect(nobody).emergencyWithdraw(ETH(1))).to.be.revertedWith("VAULTS: NOT_FACTORY_ADDRESS");
         await expect(vaultsFactory.connect(nobody).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + nobody.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(pauseRole).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + pauseRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
         await expect(vaultsFactory.connect(teamRole).emergencyWithdrawFromVault(vault1.address, ETH(1))).to.be.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
 
-        expect(await token1.balanceOf(emergencyWithdrawAddress.address)).to.equal(0);
+        expect(await token1.balanceOf(adminRole.address)).to.equal(0);
 
         await vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, ETH('0.3'));
-        expect(await token1.balanceOf(emergencyWithdrawAddress.address)).to.equal(ETH('0.3'));
+        expect(await token1.balanceOf(adminRole.address)).to.equal(ETH('0.3'));
 
-        await vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, 0);
-        expect(await token1.balanceOf(emergencyWithdrawAddress.address)).to.equal(ETH('1'));
+        await vaultsFactory.connect(addr1).emergencyWithdrawFromVault(vault1.address, 0);
+        expect(await token1.balanceOf(adminRole.address)).to.equal(ETH('1'));
 
         await vaultsFactory.connect(adminRole).unpauseAllVaults()
 
@@ -456,6 +441,28 @@ describe("Vault", function () {
         await expect(vault1.claim()).to.be.revertedWith("VAULTS: OPERATION_PAUSED_EMERGENCY");
         await expect(vault1.unwrap(ETH(1))).to.be.revertedWith("VAULTS: OPERATION_PAUSED_EMERGENCY");
         await expect(vault1.cancelUnwrap()).to.be.revertedWith("VAULTS: OPERATION_PAUSED_EMERGENCY");
+    });
+
+    it("emergency withdrawal on admin change", async function () {
+        await vaultsFactory.connect(adminRole).grantRole(ADMIN_ROLE, addr1.address);
+
+        await token1.approve(vault1.address, ETH(1));
+        await vault1.wrap(ETH(1))
+
+        await vaultsFactory.connect(adminRole).pauseAllVaults()
+
+        expect(await token1.balanceOf(adminRole.address)).to.equal(0);
+        expect(await token1.balanceOf(addr1.address)).to.equal(0);
+
+        await vaultsFactory.connect(adminRole).emergencyWithdrawFromVault(vault1.address, ETH('0.3'));
+        expect(await token1.balanceOf(adminRole.address)).to.equal(ETH('0.3'));
+        expect(await token1.balanceOf(addr1.address)).to.equal(0);
+
+        await vaultsFactory.connect(addr1).revokeRole(ADMIN_ROLE, adminRole.address);
+
+        await vaultsFactory.connect(addr1).emergencyWithdrawFromVault(vault1.address, 0);
+        expect(await token1.balanceOf(adminRole.address)).to.equal(ETH('0.3'));
+        expect(await token1.balanceOf(addr1.address)).to.equal(ETH('0.7'));
     });
 
     it("simple permit check", async function () {

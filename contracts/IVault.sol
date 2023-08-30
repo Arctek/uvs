@@ -4,9 +4,5 @@ pragma solidity ^0.8.0;
 import "./IVaultsFactory.sol";
 
 interface IVault {
-    function initialize(address underlyingToken_, IVaultsFactory factory_, bool isEth, string memory name_, string memory symbol_) external;
     function emergencyWithdraw(uint256 amount_) external;
-
-    // must return keccak256("Vaults.Vault") ^ bytes32(uint256(uint160(address(VaultsFactory))))
-    function isVault() external view returns (bytes32);
 }
