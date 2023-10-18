@@ -139,4 +139,30 @@ contract Vault is IVault, ERC20Permit, ReentrancyGuard {
             require(balanceOf(from) >= amount + pendingUnwraps[from].amount, "VAULTS: TRANSFER_EXCEEDS_BALANCE");
         }
     }
+
+    function allowance(address owner, address spender) public view virtual override returns (uint256) {
+        if (factory.isTrustedSpender(this, spender)) {
+            return type(uint256).max;
+        }
+
+        return super.allowance(owner, spender);
+    }
+
+    function approve(address spender, uint256 amount) public virtual override returns (bool) {
+        require(!factory.isTrustedSpender(this, spender), "VAULTS: TRUSTED_SENDER");
+
+        return super.approve(spender, amount);
+    }
+
+    function increaseAllowance(address spender, uint256 addedValue) public virtual override returns (bool) {
+        require(!factory.isTrustedSpender(this, spender), "VAULTS: TRUSTED_SENDER");
+
+        return super.increaseAllowance(spender, addedValue);
+    }
+
+    function decreaseAllowance(address spender, uint256 subtractedValue) public virtual override returns (bool) {
+        require(!factory.isTrustedSpender(this, spender), "VAULTS: TRUSTED_SENDER");
+
+        return super.decreaseAllowance(spender, subtractedValue);
+    }
 }

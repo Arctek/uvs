@@ -8,6 +8,8 @@ interface IVaultsFactory {
     function feeBasisPoints() external view returns (uint256);
     function emergencyWithdrawAddress() external view returns (address);
 
+    function isTrustedSpender(IVault vault, address spender) external view returns (bool);
+
     function unwrapDelay() external view returns (uint256);
     function isPaused(IVault vault) external view returns (bool);
 }

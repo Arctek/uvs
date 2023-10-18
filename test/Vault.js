@@ -49,11 +49,11 @@ describe("Vault", function () {
         const vault1addr = (await tx.wait()).events[0].args.vaultAddress;
         vault1 = await ethers.getContractAt('Vault', vault1addr)
 
-        tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "", "");
+        tx = await vaultsFactory.connect(teamRole).deployVault(token2.address, "", "");
         const vault2addr = (await tx.wait()).events[0].args.vaultAddress;
         vault2 = await ethers.getContractAt('Vault', vault2addr)
 
-        tx = await vaultsFactory.connect(teamRole).deployVault(token1.address, "", "");
+        tx = await vaultsFactory.connect(teamRole).deployVault(token3.address, "", "");
         const vault3addr = (await tx.wait()).events[0].args.vaultAddress;
         vault3 = await ethers.getContractAt('Vault', vault3addr)
 
@@ -463,6 +463,139 @@ describe("Vault", function () {
         await vaultsFactory.connect(addr1).emergencyWithdrawFromVault(vault1.address, 0);
         expect(await token1.balanceOf(adminRole.address)).to.equal(ETH('0.3'));
         expect(await token1.balanceOf(addr1.address)).to.equal(ETH('0.7'));
+    });
+
+
+    it("trusted spender negative", async function () {
+        await expect(vaultsFactory.connect(addr1).addTrustedSpenders(vault1.address, [])).to.revertedWith("AccessControl: account " + addr1.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(addr2).addTrustedSpenders(vault1.address, [])).to.revertedWith("AccessControl: account " + addr2.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await expect(vaultsFactory.connect(addr1).removeTrustedSpenders(vault1.address, [])).to.revertedWith("AccessControl: account " + addr1.address.toLowerCase() + " is missing role " + TEAM_ROLE);
+        await expect(vaultsFactory.connect(addr2).removeTrustedSpenders(vault1.address, [])).to.revertedWith("AccessControl: account " + addr2.address.toLowerCase() + " is missing role " + TEAM_ROLE);
+    })
+
+    it("trusted spender", async function () {
+        const defi1 = addr1;
+        const defi2 = addr2;
+        const user = deployer;
+
+
+        await token1.approve(vault1.address, ETH(1));
+        await vault1.wrap(ETH(1))
+        await token2.approve(vault2.address, ETH(1));
+        await vault2.wrap(ETH(1))
+
+        /////////////// check allowance works
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(0);
+
+        await vault1.approve(defi1.address, 300);
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(300);
+        await vault1.increaseAllowance(defi1.address, 100);
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(400);
+
+        await vault1.connect(defi1).transferFrom(user.address, defi1.address, 100)
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(300);
+        expect(await vault1.balanceOf(defi1.address)).to.equal(100);
+        await vault1.connect(defi1).transfer(user.address, 100)
+        expect(await vault1.balanceOf(defi1.address)).to.equal(0);
+
+        await vault1.decreaseAllowance(defi1.address, 300);
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(0);
+
+        //
+
+        await vault2.approve(defi1.address, 300);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(300);
+        await vault2.increaseAllowance(defi1.address, 100);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(400);
+
+        await vault2.connect(defi1).transferFrom(user.address, defi1.address, 100)
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(300);
+        expect(await vault2.balanceOf(defi1.address)).to.equal(100);
+        await vault2.connect(defi1).transfer(user.address, 100)
+        expect(await vault2.balanceOf(defi1.address)).to.equal(0);
+
+        await vault2.decreaseAllowance(defi1.address, 300);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(0);
+
+
+        await expect(vault1.connect(defi1).transferFrom(user.address, defi1.address, 100)).to.revertedWith("ERC20: insufficient allowance");
+
+        /////////////// set trusted
+
+        await expect(vaultsFactory.connect(teamRole).addTrustedSpenders(vault1.address, [defi1.address])).to.revertedWith("AccessControl: account " + teamRole.address.toLowerCase() + " is missing role " + ADMIN_ROLE);
+        await vaultsFactory.connect(adminRole).addTrustedSpenders(vault1.address, [defi1.address]);
+
+        /////////////// check allowance works
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(BN(2).pow(256).sub(1));
+
+        await expect(vault1.approve(defi1.address, 300)).to.revertedWith("VAULTS: TRUSTED_SENDER");
+        await expect(vault1.increaseAllowance(defi1.address, 300)).to.revertedWith("VAULTS: TRUSTED_SENDER");
+        await expect(vault1.decreaseAllowance(defi1.address, 300)).to.revertedWith("VAULTS: TRUSTED_SENDER");
+
+        await vault1.connect(defi1).transferFrom(user.address, defi1.address, 100)
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(BN(2).pow(256).sub(1));
+        expect(await vault1.balanceOf(defi1.address)).to.equal(100);
+        await vault1.connect(defi1).transfer(user.address, 100)
+        expect(await vault1.balanceOf(defi1.address)).to.equal(0);
+
+        await expect(vault1.connect(defi2).transferFrom(user.address, defi1.address, 100)).to.revertedWith("ERC20: insufficient allowance");
+
+        //
+
+        await vault2.approve(defi1.address, 300);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(300);
+        await vault2.increaseAllowance(defi1.address, 100);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(400);
+
+        await vault2.connect(defi1).transferFrom(user.address, defi1.address, 100)
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(300);
+        expect(await vault2.balanceOf(defi1.address)).to.equal(100);
+        await vault2.connect(defi1).transfer(user.address, 100)
+        expect(await vault2.balanceOf(defi1.address)).to.equal(0);
+
+        await vault2.decreaseAllowance(defi1.address, 300);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(0);
+
+        /////////////// remove trusted
+
+        await vaultsFactory.connect(teamRole).removeTrustedSpenders(vault1.address, [defi1.address]);
+
+        /////////////// check allowance works
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(0);
+
+        await vault1.approve(defi1.address, 300);
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(300);
+        await vault1.increaseAllowance(defi1.address, 100);
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(400);
+
+        await vault1.connect(defi1).transferFrom(user.address, defi1.address, 100)
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(300);
+        expect(await vault1.balanceOf(defi1.address)).to.equal(100);
+        await vault1.connect(defi1).transfer(user.address, 100)
+        expect(await vault1.balanceOf(defi1.address)).to.equal(0);
+
+        await vault1.decreaseAllowance(defi1.address, 300);
+        expect(await vault1.allowance(user.address, defi1.address)).to.equal(0);
+
+        //
+
+        await vault2.approve(defi1.address, 300);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(300);
+        await vault2.increaseAllowance(defi1.address, 100);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(400);
+
+        await vault2.connect(defi1).transferFrom(user.address, defi1.address, 100)
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(300);
+        expect(await vault2.balanceOf(defi1.address)).to.equal(100);
+        await vault2.connect(defi1).transfer(user.address, 100)
+        expect(await vault2.balanceOf(defi1.address)).to.equal(0);
+
+        await vault2.decreaseAllowance(defi1.address, 300);
+        expect(await vault2.allowance(user.address, defi1.address)).to.equal(0);
+
+
+        await expect(vault1.connect(defi1).transferFrom(user.address, defi1.address, 100)).to.revertedWith("ERC20: insufficient allowance");
+
     });
 
     it("simple permit check", async function () {
