@@ -18,6 +18,8 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
     mapping(IVault => bool) public pausedVaults;
     bool public allVaultsPaused = false;
 
+    mapping(IVault => mapping(address => bool)) public isTrustedSpender;
+
     // Role identifiers for pausing, deploying, and admin actions
     bytes32 public constant PAUSE_ROLE = keccak256("PAUSE_ROLE");
     bytes32 public constant TEAM_ROLE = keccak256("TEAM_ROLE");
@@ -27,6 +29,8 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
     event VaultUnpaused(IVault vaultAddress);
     event AllVaultsPaused();
     event AllVaultsUnpaused();
+    event TrustedSpenderAdded(IVault vaultAddress, address spender);
+    event TrustedSpenderRemoved(IVault vaultAddress, address spender);
 
     constructor(
         address weth_,
@@ -101,6 +105,20 @@ contract VaultsFactory is IVaultsFactory, AccessControlEnumerable {
 
     function emergencyWithdrawFromVault(IVault vault_, uint256 amount_) external onlyRole(DEFAULT_ADMIN_ROLE) {
         vault_.emergencyWithdraw(amount_);
+    }
+
+    function addTrustedSpenders(IVault vault_, address[] memory spenders_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        for (uint i=0; i < spenders_.length; i++) {
+            isTrustedSpender[vault_][spenders_[i]] = true;
+            emit TrustedSpenderAdded(vault_, spenders_[i]);
+        }
+    }
+
+    function removeTrustedSpenders(IVault vault_, address[] memory spenders_) external onlyRole(TEAM_ROLE) {
+        for (uint i=0; i < spenders_.length; i++) {
+            isTrustedSpender[vault_][spenders_[i]] = false;
+            emit TrustedSpenderRemoved(vault_, spenders_[i]);
+        }
     }
 
     function _setFeeReceiver(address feeReceiver_) internal {
